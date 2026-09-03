@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { calcularTabelaSAC } from './sac';
 import { calcularTabelaPrice } from './price';
+import { simulacaoSchema } from './schemas';
 
 const app = express();
 
@@ -13,22 +14,26 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
-// Rota para simulação pela Tabela SAC
-app.post('/simular/sac', (req: Request, res: Response) => {
-  const { valorImovel, entrada, taxaJurosAnual, prazoMeses } = req.body;
+const validarDados = (body: unknown) => {
+  const result = simulacaoSchema.safeParse(body);
+  if (!result.success) {
+    const erros = result.error.issues.map((issue) => ({
+      campo: issue.path.join('.'),
+      mensagem: issue.message
+    }));
+    return { valido: false, erros };
+  }
+  return { valido: true, dados: result.data };
+};
 
-  if (!valorImovel || entrada === undefined || !taxaJurosAnual || !prazoMeses) {
-    return res.status(400).json({ 
-      erro: 'Preencha todos os campos: valorImovel, entrada, taxaJurosAnual e prazoMeses.' 
-    });
+app.post('/simular/sac', (req: Request, res: Response) => {
+  const validacao = validarDados(req.body);
+  if (!validacao.valido) {
+    return res.status(400).json({ erros: validacao.erros });
   }
 
-  const resultado = calcularTabelaSAC({
-    valorImovel,
-    entrada,
-    taxaJurosAnual,
-    prazoMeses
-  });
+  const { valorImovel, entrada, taxaJurosAnual, prazoMeses } = validacao.dados!;
+  const resultado = calcularTabelaSAC({ valorImovel, entrada, taxaJurosAnual, prazoMeses });
 
   const totalJuros = resultado.reduce((acc, p) => acc + p.juros, 0);
   const totalPago = (valorImovel - entrada) + totalJuros;
@@ -49,22 +54,14 @@ app.post('/simular/sac', (req: Request, res: Response) => {
   });
 });
 
-// Rota para simulação pela Tabela PRICE
 app.post('/simular/price', (req: Request, res: Response) => {
-  const { valorImovel, entrada, taxaJurosAnual, prazoMeses } = req.body;
-
-  if (!valorImovel || entrada === undefined || !taxaJurosAnual || !prazoMeses) {
-    return res.status(400).json({ 
-      erro: 'Preencha todos os campos: valorImovel, entrada, taxaJurosAnual e prazoMeses.' 
-    });
+  const validacao = validarDados(req.body);
+  if (!validacao.valido) {
+    return res.status(400).json({ erros: validacao.erros });
   }
 
-  const resultado = calcularTabelaPrice({
-    valorImovel,
-    entrada,
-    taxaJurosAnual,
-    prazoMeses
-  });
+  const { valorImovel, entrada, taxaJurosAnual, prazoMeses } = validacao.dados!;
+  const resultado = calcularTabelaPrice({ valorImovel, entrada, taxaJurosAnual, prazoMeses });
 
   const totalJuros = resultado.reduce((acc, p) => acc + p.juros, 0);
   const totalPago = (valorImovel - entrada) + totalJuros;
@@ -84,25 +81,20 @@ app.post('/simular/price', (req: Request, res: Response) => {
   });
 });
 
-// Rota de Comparação Completa: SAC vs PRICE
 app.post('/simular/comparar', (req: Request, res: Response) => {
-  const { valorImovel, entrada, taxaJurosAnual, prazoMeses } = req.body;
-
-  if (!valorImovel || entrada === undefined || !taxaJurosAnual || !prazoMeses) {
-    return res.status(400).json({ 
-      erro: 'Preencha todos os campos: valorImovel, entrada, taxaJurosAnual e prazoMeses.' 
-    });
+  const validacao = validarDados(req.body);
+  if (!validacao.valido) {
+    return res.status(400).json({ erros: validacao.erros });
   }
 
-  const dados = { valorImovel, entrada, taxaJurosAnual, prazoMeses };
-
+  const dados = validacao.dados!;
   const parcelasSAC = calcularTabelaSAC(dados);
   const parcelasPrice = calcularTabelaPrice(dados);
 
   const totalJurosSAC = parcelasSAC.reduce((acc, p) => acc + p.juros, 0);
   const totalJurosPrice = parcelasPrice.reduce((acc, p) => acc + p.juros, 0);
 
-  const valorFinanciado = valorImovel - entrada;
+  const valorFinanciado = dados.valorImovel - dados.entrada;
   const totalPagoSAC = valorFinanciado + totalJurosSAC;
   const totalPagoPrice = valorFinanciado + totalJurosPrice;
 
@@ -110,13 +102,7 @@ app.post('/simular/comparar', (req: Request, res: Response) => {
   const maisVantajoso = totalJurosSAC < totalJurosPrice ? 'SAC' : 'PRICE';
 
   return res.status(200).json({
-    dadosEntrada: {
-      valorImovel,
-      entrada,
-      valorFinanciado,
-      taxaJurosAnual,
-      prazoMeses
-    },
+    dadosEntrada: dados,
     comparativo: {
       maisVantajosoEmJuros: maisVantajoso,
       economiaTotalJuros: Number(diferencaJuros.toFixed(2)),
