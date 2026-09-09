@@ -127,6 +127,11 @@ app.post('/simular/comparar', (req: Request, res: Response) => {
 
 const PORT = 3333;
 
-app.listen(PORT, () => {
-  console.log(`🚀 CalcularLar API rodando na porta ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`🚀 CalcularLar API rodando na porta ${PORT}`);
+  });
+}
+
+export { app };
+export default app;
